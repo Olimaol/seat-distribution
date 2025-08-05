@@ -147,6 +147,9 @@
     let gridContainer = null;
     let touchStartTimeout = null;
     let pendingSelection = false;
+    let autoScrollInterval = null;
+    const AUTO_SCROLL_THRESHOLD = 50; // pixels from edge to trigger auto-scroll
+    const AUTO_SCROLL_SPEED = 3; // pixels per interval
     undoBtn.style.display = isMobile ? 'inline-flex' : 'none';
 
     function buildGrid() {
@@ -191,6 +194,8 @@
 
     function handleDown(e, cell) {
       if (locked) return;
+      // Stop any ongoing auto-scroll
+      stopAutoScroll();
       // On mobile, only handle single finger touches for selection
       if (isMobile && e.touches && e.touches.length > 1) return;
       // Don't prevent default on mobile to allow scrolling
@@ -262,12 +267,15 @@
         // Update last position
         lastTouchCenter = { x: centerX, y: centerY };
       } else if (e.touches.length === 1 && !isScrolling && selecting) {
-        // Single finger selection
+        // Single finger selection with auto-scroll
         const touch = e.touches[0];
         const target = document.elementFromPoint(touch.clientX, touch.clientY);
         if (target?.classList.contains('cell')) {
           updateSel({ target });
         }
+        
+        // Handle auto-scrolling near edges
+        handleAutoScroll(touch.clientX, touch.clientY);
       }
     }
 
@@ -282,6 +290,83 @@
           clearTimeout(touchStartTimeout);
           touchStartTimeout = null;
         }
+        // Stop auto-scrolling when touch ends
+        stopAutoScroll();
+      }
+    }
+
+    function handleAutoScroll(touchX, touchY) {
+      // Get grid container boundaries
+      const rect = gridContainer.getBoundingClientRect();
+      const scrollLeft = gridContainer.scrollLeft;
+      const scrollTop = gridContainer.scrollTop;
+      const scrollWidth = gridContainer.scrollWidth;
+      const scrollHeight = gridContainer.scrollHeight;
+      const containerWidth = gridContainer.clientWidth;
+      const containerHeight = gridContainer.clientHeight;
+      
+      // Calculate distances from edges
+      const distanceFromLeft = touchX - rect.left;
+      const distanceFromRight = rect.right - touchX;
+      const distanceFromTop = touchY - rect.top;
+      const distanceFromBottom = rect.bottom - touchY;
+      
+      // Determine scroll direction
+      let scrollX = 0;
+      let scrollY = 0;
+      
+      // Check horizontal scrolling
+      if (distanceFromLeft < AUTO_SCROLL_THRESHOLD && scrollLeft > 0) {
+        scrollX = -AUTO_SCROLL_SPEED;
+      } else if (distanceFromRight < AUTO_SCROLL_THRESHOLD && scrollLeft < scrollWidth - containerWidth) {
+        scrollX = AUTO_SCROLL_SPEED;
+      }
+      
+      // Check vertical scrolling
+      if (distanceFromTop < AUTO_SCROLL_THRESHOLD && scrollTop > 0) {
+        scrollY = -AUTO_SCROLL_SPEED;
+      } else if (distanceFromBottom < AUTO_SCROLL_THRESHOLD && scrollTop < scrollHeight - containerHeight) {
+        scrollY = AUTO_SCROLL_SPEED;
+      }
+      
+      // Apply auto-scrolling if needed
+      if (scrollX !== 0 || scrollY !== 0) {
+        startAutoScroll(scrollX, scrollY);
+      } else {
+        stopAutoScroll();
+      }
+    }
+
+    function startAutoScroll(scrollX, scrollY) {
+      if (autoScrollInterval) return; // Already scrolling
+      
+      autoScrollInterval = setInterval(() => {
+        gridContainer.scrollLeft += scrollX;
+        gridContainer.scrollTop += scrollY;
+        
+        // Check if we've reached the boundaries
+        const rect = gridContainer.getBoundingClientRect();
+        const scrollLeft = gridContainer.scrollLeft;
+        const scrollTop = gridContainer.scrollTop;
+        const scrollWidth = gridContainer.scrollWidth;
+        const scrollHeight = gridContainer.scrollHeight;
+        const containerWidth = gridContainer.clientWidth;
+        const containerHeight = gridContainer.clientHeight;
+        
+        // Stop if we can't scroll further
+        if ((scrollX < 0 && scrollLeft <= 0) ||
+            (scrollX > 0 && scrollLeft >= scrollWidth - containerWidth) ||
+            (scrollY < 0 && scrollTop <= 0) ||
+            (scrollY > 0 && scrollTop >= scrollHeight - containerHeight)) {
+          stopAutoScroll();
+        }
+      }, 16); // ~60fps
+    }
+
+    function stopAutoScroll() {
+      if (autoScrollInterval) {
+        clearInterval(autoScrollInterval);
+        autoScrollInterval = null;
       }
     }
 
@@ -290,7 +375,11 @@
       if (e.touches.length > 1) return;
       const touch = e.touches[0];
       const target = document.elementFromPoint(touch.clientX, touch.clientY);
-      if (selecting && target?.classList.contains('cell')) updateSel({ target });
+      if (selecting && target?.classList.contains('cell')) {
+        updateSel({ target });
+        // Handle auto-scrolling during selection
+        handleAutoScroll(touch.clientX, touch.clientY);
+      }
     }
 
     function updateSel(e) {

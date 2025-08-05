@@ -19,7 +19,7 @@
     input:checked + .slider { background-color: #4caf50; }
     input:checked + .slider:before { transform: translateX(26px); }
     .info { margin-bottom: 1rem; font-weight: bold; }
-    .grid-container { overflow: auto; background: #ddd; padding: 0.5rem; border-radius: 8px; max-height: 60vh; scrollbar-width: thin; scrollbar-color: #888 #ddd; }
+    .grid-container { overflow: auto; background: #ddd; padding: 0.5rem; border-radius: 8px; max-height: 60vh; scrollbar-width: thin; scrollbar-color: #888 #ddd; touch-action: pan-x pan-y; }
     .grid-container::-webkit-scrollbar { width: 8px; height: 8px; }
     .grid-container::-webkit-scrollbar-track { background: #ddd; border-radius: 4px; }
     .grid-container::-webkit-scrollbar-thumb { background: #888; border-radius: 4px; }
@@ -85,14 +85,28 @@
         cell.addEventListener(isMobile ? 'touchstart' : 'mousedown', e => handleDown(e, cell));
         if (!isMobile) cell.addEventListener('mouseenter', e => selecting && updateSel(e));
       });
-      if (isMobile) gridEl.addEventListener('touchmove', handleMove);
+      if (isMobile) {
+        gridEl.addEventListener('touchmove', handleMove);
+        // Prevent default scrolling only during single-finger selection
+        gridEl.addEventListener('touchmove', e => {
+          if (selecting && e.touches.length === 1) {
+            e.preventDefault();
+          }
+        }, { passive: false });
+      }
       document.addEventListener(isMobile ? 'touchend' : 'mouseup', () => selecting = false);
       undoBtn.onclick = undo; resetBtn.onclick = reset;
     }
 
     function handleDown(e, cell) {
       if (locked) return;
-      e.preventDefault(); selecting = true;
+      // On mobile, only handle single finger touches for selection
+      if (isMobile && e.touches && e.touches.length > 1) return;
+      // Only prevent default for single finger touches
+      if (!isMobile || (e.touches && e.touches.length === 1)) {
+        e.preventDefault();
+      }
+      selecting = true;
       const ctrl = !isMobile && e.ctrlKey;
       startCell = cell;
       baseAvailable = ctrl ? new Set(available) : (isMobile ? new Set(available) : new Set());
@@ -101,6 +115,8 @@
     }
 
     function handleMove(e) {
+      // Only handle single finger touches for selection
+      if (e.touches.length > 1) return;
       const touch = e.touches[0];
       const target = document.elementFromPoint(touch.clientX, touch.clientY);
       if (selecting && target?.classList.contains('cell')) updateSel({ target });

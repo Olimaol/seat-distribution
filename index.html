@@ -19,11 +19,11 @@
     input:checked + .slider { background-color: #4caf50; }
     input:checked + .slider:before { transform: translateX(26px); }
     .info { margin-bottom: 1rem; font-weight: bold; }
-    .grid-container { overflow: auto; background: #ddd; padding: 0.5rem; border-radius: 8px; max-height: 60vh; scrollbar-width: thin; scrollbar-color: #888 #ddd; touch-action: pan-x pan-y; }
+    .grid-container { overflow: auto; background: #ddd; padding: 0.5rem; border-radius: 8px; max-height: 60vh; scrollbar-width: thin; scrollbar-color: #888 #ddd; -webkit-overflow-scrolling: touch; }
     .grid-container::-webkit-scrollbar { width: 8px; height: 8px; }
     .grid-container::-webkit-scrollbar-track { background: #ddd; border-radius: 4px; }
     .grid-container::-webkit-scrollbar-thumb { background: #888; border-radius: 4px; }
-    .grid { display: grid; user-select: none; touch-action: none; }
+    .grid { display: grid; user-select: none; }
     .cell { border: 1px solid #ccc; display: flex; align-items: center; justify-content: center; background: white; cursor: pointer; transition: background 0.2s; }
     .cell.available { background: #cce5ff; }
     .cell.student { background: #8bc34a; }
@@ -86,13 +86,7 @@
         if (!isMobile) cell.addEventListener('mouseenter', e => selecting && updateSel(e));
       });
       if (isMobile) {
-        gridEl.addEventListener('touchmove', handleMove);
-        // Prevent default scrolling only during single-finger selection
-        gridEl.addEventListener('touchmove', e => {
-          if (selecting && e.touches.length === 1) {
-            e.preventDefault();
-          }
-        }, { passive: false });
+        gridEl.addEventListener('touchmove', handleMove, { passive: true });
       }
       document.addEventListener(isMobile ? 'touchend' : 'mouseup', () => selecting = false);
       undoBtn.onclick = undo; resetBtn.onclick = reset;
@@ -102,8 +96,8 @@
       if (locked) return;
       // On mobile, only handle single finger touches for selection
       if (isMobile && e.touches && e.touches.length > 1) return;
-      // Only prevent default for single finger touches
-      if (!isMobile || (e.touches && e.touches.length === 1)) {
+      // Don't prevent default on mobile to allow scrolling
+      if (!isMobile) {
         e.preventDefault();
       }
       selecting = true;

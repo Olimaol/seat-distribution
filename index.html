@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <title>Seat Distribution</title>
   <style>
     body { font-family: Arial, sans-serif; padding: 1rem; background: #f5f5f5; margin: 0; }
@@ -19,12 +19,12 @@
     input:checked + .slider { background-color: #4caf50; }
     input:checked + .slider:before { transform: translateX(26px); }
     .info { margin-bottom: 1rem; font-weight: bold; }
-    .grid-container { overflow: auto; background: #ddd; padding: 0.5rem; border-radius: 8px; max-height: 60vh; scrollbar-width: thin; scrollbar-color: #888 #ddd; -webkit-overflow-scrolling: touch; }
+    .grid-container { overflow: auto; background: #ddd; padding: 0.5rem; border-radius: 8px; max-height: 60vh; scrollbar-width: thin; scrollbar-color: #888 #ddd; -webkit-overflow-scrolling: touch; touch-action: pan-x pan-y; }
     .grid-container::-webkit-scrollbar { width: 8px; height: 8px; }
     .grid-container::-webkit-scrollbar-track { background: #ddd; border-radius: 4px; }
     .grid-container::-webkit-scrollbar-thumb { background: #888; border-radius: 4px; }
-    .grid { display: grid; user-select: none; }
-    .cell { border: 1px solid #ccc; display: flex; align-items: center; justify-content: center; background: white; cursor: pointer; transition: background 0.2s; }
+    .grid { display: grid; user-select: none; touch-action: none; }
+    .cell { border: 1px solid #ccc; display: flex; align-items: center; justify-content: center; background: white; cursor: pointer; transition: background 0.2s; touch-action: none; }
     .cell.available { background: #cce5ff; }
     .cell.student { background: #8bc34a; }
     @media (max-width: 600px) { .controls { flex-direction: column; } }
@@ -62,10 +62,14 @@
     let selecting = false, startCell = null;
     let available = new Set(), baseAvailable = new Set();
     const history = [];
+    let isScrolling = false;
+    let lastTouchCenter = { x: 0, y: 0 };
+    let gridContainer = null;
     undoBtn.style.display = isMobile ? 'inline-flex' : 'none';
 
     function buildGrid() {
       gridEl.innerHTML = '';
+      gridContainer = document.querySelector('.grid-container');
       const cellSize = isMobile ? 24 : 30;
       gridEl.style.gridTemplateColumns = `repeat(${cols}, ${cellSize}px)`;
       gridEl.style.gridTemplateRows = `repeat(${rows}, ${cellSize}px)`;
@@ -86,7 +90,9 @@
         if (!isMobile) cell.addEventListener('mouseenter', e => selecting && updateSel(e));
       });
       if (isMobile) {
-        gridEl.addEventListener('touchmove', handleMove, { passive: true });
+        gridContainer.addEventListener('touchstart', handleGridTouchStart, { passive: false });
+        gridContainer.addEventListener('touchmove', handleGridTouchMove, { passive: false });
+        gridContainer.addEventListener('touchend', handleGridTouchEnd, { passive: false });
       }
       document.addEventListener(isMobile ? 'touchend' : 'mouseup', () => selecting = false);
       undoBtn.onclick = undo; resetBtn.onclick = reset;
@@ -106,6 +112,61 @@
       baseAvailable = ctrl ? new Set(available) : (isMobile ? new Set(available) : new Set());
       if (isMobile) history.push(new Set(available));
       updateSel({ target: cell });
+    }
+
+    function handleGridTouchStart(e) {
+      if (e.touches.length === 2) {
+        // Two fingers - prepare for scrolling and prevent zoom
+        e.preventDefault();
+        isScrolling = true;
+        selecting = false;
+        const touch1 = e.touches[0];
+        const touch2 = e.touches[1];
+        lastTouchCenter = {
+          x: (touch1.clientX + touch2.clientX) / 2,
+          y: (touch1.clientY + touch2.clientY) / 2
+        };
+      } else if (e.touches.length === 1) {
+        // Single finger - reset scrolling state
+        isScrolling = false;
+      }
+    }
+
+    function handleGridTouchMove(e) {
+      if (e.touches.length === 2 && isScrolling) {
+        // Two-finger scrolling
+        e.preventDefault();
+        const touch1 = e.touches[0];
+        const touch2 = e.touches[1];
+        
+        // Calculate center point of the two touches
+        const centerX = (touch1.clientX + touch2.clientX) / 2;
+        const centerY = (touch1.clientY + touch2.clientY) / 2;
+        
+        // Calculate movement from previous position
+        const deltaX = lastTouchCenter.x - centerX;
+        const deltaY = lastTouchCenter.y - centerY;
+        
+        // Apply scrolling
+        gridContainer.scrollLeft += deltaX;
+        gridContainer.scrollTop += deltaY;
+        
+        // Update last position
+        lastTouchCenter = { x: centerX, y: centerY };
+      } else if (e.touches.length === 1 && !isScrolling && selecting) {
+        // Single finger selection
+        const touch = e.touches[0];
+        const target = document.elementFromPoint(touch.clientX, touch.clientY);
+        if (target?.classList.contains('cell')) {
+          updateSel({ target });
+        }
+      }
+    }
+
+    function handleGridTouchEnd(e) {
+      if (e.touches.length < 2) {
+        isScrolling = false;
+      }
     }
 
     function handleMove(e) {

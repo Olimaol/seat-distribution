@@ -19,15 +19,15 @@
     input:checked + .slider { background-color: #4caf50; }
     input:checked + .slider:before { transform: translateX(26px); }
     .info { margin-bottom: 1rem; font-weight: bold; }
-    .grid-container { overflow: auto; background: #ddd; padding: 0.5rem; border-radius: 8px; scrollbar-width: thin; scrollbar-color: #888 #ddd; }
+    .grid-container { overflow: auto; background: #ddd; padding: 0.5rem; border-radius: 8px; max-height: 60vh; scrollbar-width: thin; scrollbar-color: #888 #ddd; }
     .grid-container::-webkit-scrollbar { width: 8px; height: 8px; }
     .grid-container::-webkit-scrollbar-track { background: #ddd; border-radius: 4px; }
     .grid-container::-webkit-scrollbar-thumb { background: #888; border-radius: 4px; }
     .grid { display: grid; user-select: none; touch-action: none; }
-    .cell { width: 30px; height: 30px; border: 1px solid #ccc; display: flex; align-items: center; justify-content: center; background: white; cursor: pointer; transition: background 0.2s; }
+    .cell { border: 1px solid #ccc; display: flex; align-items: center; justify-content: center; background: white; cursor: pointer; transition: background 0.2s; }
     .cell.available { background: #cce5ff; }
     .cell.student { background: #8bc34a; }
-    @media (max-width: 600px) { .controls { flex-direction: column; } .cell { width: 24px; height: 24px; } }
+    @media (max-width: 600px) { .controls { flex-direction: column; } }
   </style>
 </head>
 <body>
@@ -37,20 +37,12 @@
     <label>Spacing: <input type="number" id="spacing" min="0" value="1"></label>
     <label><input type="checkbox" id="emptyRows"> Every 2nd row empty</label>
     <label><input type="checkbox" id="edgeSeats"> Allow edge seating</label>
-    <label>Lock selection:
-      <label class="switch">
-        <input type="checkbox" id="lockToggle">
-        <span class="slider"></span>
-      </label>
-    </label>
+    <label>Lock:<label class="switch"><input type="checkbox" id="lockToggle"><span class="slider"></span></label></label>
     <button id="undoBtn">Undo</button>
     <button id="resetBtn">Reset</button>
   </div>
   <div class="info">Distributed Students: <span id="studentCount">0</span></div>
-  <div class="grid-container">
-    <div id="grid" class="grid"></div>
-  </div>
-
+  <div class="grid-container"><div id="grid" class="grid"></div></div>
   <script>
     const isMobile = 'ontouchstart' in window;
     const gridEl = document.getElementById('grid');
@@ -70,18 +62,18 @@
     let selecting = false, startCell = null;
     let available = new Set(), baseAvailable = new Set();
     const history = [];
-
-    // Hide undo on desktop
     undoBtn.style.display = isMobile ? 'inline-flex' : 'none';
 
     function buildGrid() {
       gridEl.innerHTML = '';
-      gridEl.style.gridTemplateColumns = `repeat(${cols}, auto)`;
-      gridEl.style.gridTemplateRows = `repeat(${rows}, auto)`;
+      const cellSize = isMobile ? 24 : 30;
+      gridEl.style.gridTemplateColumns = `repeat(${cols}, ${cellSize}px)`;
+      gridEl.style.gridTemplateRows = `repeat(${rows}, ${cellSize}px)`;
       for (let r = 0; r < rows; r++) {
         for (let c = 0; c < cols; c++) {
           const cell = document.createElement('div');
           cell.className = 'cell'; cell.dataset.r = r; cell.dataset.c = c;
+          cell.style.width = cell.style.height = cellSize + 'px';
           gridEl.append(cell);
         }
       }
@@ -91,9 +83,9 @@
     function bindEvents() {
       gridEl.querySelectorAll('.cell').forEach(cell => {
         cell.addEventListener(isMobile ? 'touchstart' : 'mousedown', e => handleDown(e, cell));
+        if (!isMobile) cell.addEventListener('mouseenter', e => selecting && updateSel(e));
       });
       if (isMobile) gridEl.addEventListener('touchmove', handleMove);
-      else gridEl.querySelectorAll('.cell').forEach(cell => cell.addEventListener('mouseenter', e => selecting && updateSel(e)));
       document.addEventListener(isMobile ? 'touchend' : 'mouseup', () => selecting = false);
       undoBtn.onclick = undo; resetBtn.onclick = reset;
     }
@@ -101,7 +93,6 @@
     function handleDown(e, cell) {
       if (locked) return;
       e.preventDefault(); selecting = true;
-      // mobile: always keep previous, desktop: reset unless ctrl
       const ctrl = !isMobile && e.ctrlKey;
       startCell = cell;
       baseAvailable = ctrl ? new Set(available) : (isMobile ? new Set(available) : new Set());
@@ -126,79 +117,42 @@
       render();
     }
 
-    function undo() {
-      if (!isMobile || !history.length) return;
-      available = history.pop(); render();
-    }
-
-    function reset() {
-      history.length = 0; available.clear(); render();
-    }
+    function undo() { if (isMobile && history.length) { available = history.pop(); render(); }}
+    function reset() { history.length = 0; available.clear(); render(); }
 
     function render() {
       gridEl.querySelectorAll('.cell').forEach(cell => {
         const k = `${cell.dataset.r},${cell.dataset.c}`;
-        cell.classList.toggle('available', available.has(k));
-        cell.classList.remove('student');
+        cell.classList.toggle('available', available.has(k)); cell.classList.remove('student');
       });
-      if (locked) { const cnt = distribute(); updateCount(cnt); }
-      else updateCount(0);
+      if (locked) { const cnt = distribute(); updateCount(cnt); } else updateCount(0);
     }
 
     function distribute() {
       let maxRow = 0, maxCount = -1;
       for (let r = 0; r < rows; r++) {
-        if (emptyRows && r % 2 === 1) continue;
+        if (emptyRows && r % 2) continue;
         let cnt = 0;
-        for (let c = 0; c < cols; c++) {
-          if (available.has(`${r},${c}`) && (allowEdge || (c >= spacing && c < cols - spacing))) cnt++;
-        }
+        for (let c = 0; c < cols; c++) if (available.has(`${r},${c}`) && (allowEdge || (c >= spacing && c < cols - spacing))) cnt++;
         if (cnt > maxCount) { maxCount = cnt; maxRow = r; }
       }
       if (maxCount < 1) return 0;
-
       let best = { score: -1, cols: [] };
       for (let shift = 0; shift <= spacing; shift++) {
         const cand = [];
         for (let c = 0; c < cols; c++) {
           if (!allowEdge && (c < spacing || c >= cols - spacing)) continue;
-          if ((c - shift) % (spacing + 1) !== 0) continue;
-          if (!available.has(`${maxRow},${c}`)) continue;
-          cand.push(c);
+          if ((c - shift) % (spacing + 1)) continue;
+          if (available.has(`${maxRow},${c}`)) cand.push(c);
         }
-        let score = 0;
-        cand.forEach(c => {
-          for (let r = 0; r < rows; r++) {
-            if (emptyRows && r % 2 === 1) continue;
-            if (available.has(`${r},${c}`)) score++;
-          }
-        });
+        let score = 0; cand.forEach(c => { for (let r = 0; r < rows; r++) if (!(emptyRows && r % 2) && available.has(`${r},${c}`)) score++; });
         if (score > best.score) best = { score, cols: cand };
       }
-
-      best.cols.forEach(c => {
-        for (let r = 0; r < rows; r++) {
-          if (emptyRows && r % 2 === 1) continue;
-          const key = `${r},${c}`;
-          if (!available.has(key)) continue;
-          const cell = gridEl.querySelector(`.cell[data-r='${r}'][data-c='${c}']`);
-          cell.classList.add('student');
-        }
-      });
-
-      return best.cols.reduce((sum, c) => {
-        let colCount = 0;
-        for (let r = 0; r < rows; r++) {
-          if (emptyRows && r % 2 === 1) continue;
-          if (available.has(`${r},${c}`)) colCount++;
-        }
-        return sum + colCount;
-      }, 0);
+      best.cols.forEach(c => { for (let r = 0; r < rows; r++) if (!(emptyRows && r % 2) && available.has(`${r},${c}`)) gridEl.querySelector(`[data-r='${r}'][data-c='${c}']`).classList.add('student'); });
+      return best.cols.reduce((sum, c) => sum + [...Array(rows).keys()].filter(r => !(emptyRows && r % 2) && available.has(`${r},${c}`)).length, 0);
     }
 
     function updateCount(n) { studentCountEl.textContent = n; }
-
-    function updateCount(n){ studentCountEl.textContent = n; }
 
     [rowsInput, colsInput].forEach(i => i.onchange = () => { rows = +rowsInput.value; cols = +colsInput.value; available.clear(); history.length = 0; buildGrid(); });
     spacingInput.onchange = () => { spacing = +spacingInput.value; locked && render(); };

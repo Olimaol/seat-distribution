@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Seat Distribution</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 1rem; background: #f5f5f5; }
+    .controls { display: flex; flex-wrap: wrap; gap: 1rem; margin-bottom: 1rem; }
+    .controls label { display: flex; align-items: center; gap: 0.5rem; }
+    .grid { display: grid; background: #ddd; user-select: none; }
+    .cell {
+      width: 30px; height: 30px; border: 1px solid #ccc;
+      display: flex; align-items: center; justify-content: center;
+      background: white; cursor: pointer;
+      transition: background 0.2s;
+    }
+    .cell.available { background: #cce5ff; }
+    .cell.student { background: #8bc34a; }
+    .cell.locked { cursor: default; }
+    .switch { position: relative; display: inline-block; width: 50px; height: 24px; }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
+      background-color: #ccc; transition: .4s; border-radius: 24px; }
+    .slider:before { position: absolute; content: ""; height: 18px; width: 18px; left: 3px; bottom: 3px;
+      background-color: white; transition: .4s; border-radius: 50%; }
+    input:checked + .slider { background-color: #4caf50; }
+    input:checked + .slider:before { transform: translateX(26px); }
+    .info { margin-bottom: 1rem; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <div class="controls">
+    <label>Rows: <input type="number" id="rows" min="1" value="15"></label>
+    <label>Columns: <input type="number" id="cols" min="1" value="15"></label>
+    <label>Spacing: <input type="number" id="spacing" min="0" value="1"></label>
+    <label><input type="checkbox" id="emptyRows"> Every 2nd row empty</label>
+    <label><input type="checkbox" id="edgeSeats"> Allow edge seating</label>
+    <label>Lock selection:
+      <label class="switch">
+        <input type="checkbox" id="lockToggle">
+        <span class="slider"></span>
+      </label>
+    </label>
+  </div>
+  <div class="info">Distributed Students: <span id="studentCount">0</span></div>
+  <div id="grid" class="grid"></div>
+
+  <script>
+    const gridEl = document.getElementById('grid');
+    const rowsInput = document.getElementById('rows');
+    const colsInput = document.getElementById('cols');
+    const spacingInput = document.getElementById('spacing');
+    const emptyRowsInput = document.getElementById('emptyRows');
+    const lockToggle = document.getElementById('lockToggle');
+    const edgeSeatsInput = document.getElementById('edgeSeats');
+    const studentCountEl = document.getElementById('studentCount');
+
+    let rows = +rowsInput.value;
+    let cols = +colsInput.value;
+    let spacing = +spacingInput.value;
+    let emptyRows = emptyRowsInput.checked;
+    let allowEdge = edgeSeatsInput.checked;
+    let locked = lockToggle.checked;
+    let selecting = false;
+    let startCell = null;
+    let ctrlKey = false;
+    let available = new Set();
+    let baseAvailable = new Set();
+
+    function buildGrid() {
+      gridEl.innerHTML = '';
+      gridEl.style.gridTemplateColumns = `repeat(${cols}, 30px)`;
+      gridEl.style.gridTemplateRows = `repeat(${rows}, 30px)`;
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          const cell = document.createElement('div');
+          cell.className = 'cell';
+          cell.dataset.r = r;
+          cell.dataset.c = c;
+          gridEl.append(cell);
+        }
+      }
+      bindCellEvents();
+      updateCount(0);
+    }
+
+    function bindCellEvents() {
+      gridEl.querySelectorAll('.cell').forEach(cell => {
+        cell.onmousedown = e => {
+          if (locked) return;
+          ctrlKey = e.ctrlKey;
+          selecting = true;
+          startCell = cell;
+          baseAvailable = ctrlKey ? new Set(available) : new Set();
+          updateSelection(e);
+        };
+        cell.onmouseenter = e => selecting && updateSelection(e);
+      });
+      document.onmouseup = () => selecting = false;
+    }
+
+    function updateSelection(e) {
+      if (!startCell) return;
+      const endCell = e.target;
+      available = new Set(baseAvailable);
+      const r1 = +startCell.dataset.r;
+      const c1 = +startCell.dataset.c;
+      const r2 = +endCell.dataset.r;
+      const c2 = +endCell.dataset.c;
+      const [rStart, rEnd] = [Math.min(r1, r2), Math.max(r1, r2)];
+      const [cStart, cEnd] = [Math.min(c1, c2), Math.max(c1, c2)];
+      for (let r = rStart; r <= rEnd; r++) {
+        for (let c = cStart; c <= cEnd; c++) {
+          available.add(`${r},${c}`);
+        }
+      }
+      render();
+    }
+
+    function render() {
+      gridEl.querySelectorAll('.cell').forEach(cell => {
+        const key = `${cell.dataset.r},${cell.dataset.c}`;
+        cell.classList.toggle('available', available.has(key));
+        cell.classList.remove('student');
+      });
+      if (locked) {
+        const count = distributeStudents();
+        updateCount(count);
+      } else {
+        updateCount(0);
+      }
+    }
+
+    function distributeStudents() {
+      // Determine the row with the most available seats
+      let maxRow = 0, maxCount = -1;
+      for (let r = 0; r < rows; r++) {
+        if (emptyRows && r % 2 === 1) continue;
+        let count = 0;
+        for (let c = 0; c < cols; c++) {
+          if (available.has(`${r},${c}`) && (allowEdge || (c >= spacing && c <= cols - 1 - spacing))) count++;
+        }
+        if (count > maxCount) {
+          maxCount = count;
+          maxRow = r;
+        }
+      }
+      if (maxCount <= 0) return 0;
+
+      // Try all shifts from 0 to spacing
+      let best = { score: -1, cols: [] };
+      for (let shift = 0; shift <= spacing; shift++) {
+        const candidate = [];
+        for (let c = 0; c < cols; c++) {
+          if (!allowEdge && (c < spacing || c > cols - 1 - spacing)) continue;
+          if ((c - shift) % (spacing + 1) !== 0) continue;
+          if (!available.has(`${maxRow},${c}`)) continue;
+          candidate.push(c);
+        }
+        // Score by counting actual seats in all rows
+        let score = 0;
+        candidate.forEach(c => {
+          for (let r = 0; r < rows; r++) {
+            if (emptyRows && r % 2 === 1) continue;
+            if (available.has(`${r},${c}`)) score++;
+          }
+        });
+        if (score > best.score) {
+          best = { score, cols: candidate };
+        }
+      }
+
+      // Mark students
+      best.cols.forEach(c => {
+        for (let r = 0; r < rows; r++) {
+          if (emptyRows && r % 2 === 1) continue;
+          const key = `${r},${c}`;
+          if (!available.has(key)) continue;
+          const cell = gridEl.querySelector(`.cell[data-r='${r}'][data-c='${c}']`);
+          cell.classList.add('student');
+        }
+      });
+      return best.cols.reduce((sum, c) => {
+        let colCount = 0;
+        for (let r = 0; r < rows; r++) {
+          if (emptyRows && r % 2 === 1) continue;
+          if (available.has(`${r},${c}`)) colCount++;
+        }
+        return sum + colCount;
+      }, 0);
+    }
+
+    function updateCount(n) {
+      studentCountEl.textContent = n;
+    }
+
+    [rowsInput, colsInput].forEach(inp => inp.onchange = () => {
+      rows = +rowsInput.value;
+      cols = +colsInput.value;
+      available.clear(); baseAvailable.clear();
+      buildGrid();
+    });
+    spacingInput.onchange = () => { spacing = +spacingInput.value; locked && render(); };
+    emptyRowsInput.onchange = () => { emptyRows = emptyRowsInput.checked; locked && render(); };
+    edgeSeatsInput.onchange = () => { allowEdge = edgeSeatsInput.checked; locked && render(); };
+    lockToggle.onchange = () => { locked = lockToggle.checked; render(); };
+
+    buildGrid();
+  </script>
+</body>
+</html>

@@ -7,7 +7,7 @@
   <style>
     body { font-family: Arial, sans-serif; padding: 0.5rem; background: #f5f5f5; margin: 0; padding-bottom: env(safe-area-inset-bottom, 80px); }
     .info { margin-bottom: 1rem; font-weight: bold; text-align: center; }
-    .grid-container { overflow: auto; background: #ddd; padding: 0.5rem; border-radius: 8px; max-height: 50vh; scrollbar-width: thin; scrollbar-color: #888 #ddd; -webkit-overflow-scrolling: touch; touch-action: pan-x pan-y; margin-bottom: 1rem; }
+    .grid-container { overflow: auto; background: #ddd; padding: 0.5rem; border-radius: 8px; max-height: 50vh; max-width: 90vw; width: fit-content; scrollbar-width: thin; scrollbar-color: #888 #ddd; -webkit-overflow-scrolling: touch; touch-action: pan-x pan-y; margin-bottom: 1rem; }
     .grid-container::-webkit-scrollbar { width: 8px; height: 8px; }
     .grid-container::-webkit-scrollbar-track { background: #ddd; border-radius: 4px; }
     .grid-container::-webkit-scrollbar-thumb { background: #888; border-radius: 4px; }
@@ -38,7 +38,7 @@
       body { padding: 0.25rem; padding-bottom: env(safe-area-inset-bottom, 100px); }
       .controls { grid-template-columns: 1fr 1fr; gap: 0.25rem; padding: 0.5rem; }
       .controls label, .controls button { padding: 0.4rem; font-size: 0.85rem; }
-      .grid-container { max-height: 60vh; }
+      .grid-container { max-height: 60vh; max-width: 95vw; }
       .info { font-size: 0.9rem; margin-bottom: 0.5rem; }
     }
     .switch {
@@ -102,11 +102,61 @@
     .slider.round:before {
       border-radius: 50%;
     }
+    .front-indicator {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin: 0.5rem 0 1rem 0;
+      gap: 0.25rem;
+      width: fit-content;
+      position: relative;
+    }
+    .front-line {
+      width: 300px; /* Default width, will be overridden by JavaScript */
+      height: 3px;
+      background: linear-gradient(90deg, transparent 0%, #ff6b35 20%, #ff6b35 80%, transparent 100%);
+      border-radius: 2px;
+      position: relative;
+    }
+    .front-line::before {
+      content: '';
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      width: 60px;
+      height: 8px;
+      background: #ff6b35;
+      border-radius: 4px;
+      box-shadow: 0 0 8px rgba(255, 107, 53, 0.4);
+    }
+    .front-text {
+      font-size: 0.75rem;
+      font-weight: bold;
+      color: #ff6b35;
+      text-align: center;
+      letter-spacing: 0.5px;
+      opacity: 0.8;
+    }
+    @media (max-width: 600px) {
+      .front-text {
+        font-size: 0.7rem;
+      }
+      .front-line {
+        height: 2px;
+      }
+      .front-line::before {
+        width: 40px;
+        height: 6px;
+      }
+    }
   </style>
 </head>
 <body>
   <div class="info">Distributed Students: <span id="studentCount">0</span></div>
-  <div class="grid-container"><div id="grid" class="grid"></div></div>
+  <div id="selectionInfo" class="info" style="color: #1976d2; padding: 0.5rem; border-radius: 4px; margin-bottom: 0.5rem; min-height: 1.2em;">
+    <span id="selectionSize" style="visibility: hidden;">Selection: 0 × 0</span>
+  </div>
   <div class="controls">
     <label>Rows: <input type="number" id="rows" min="1" value="15"></label>
     <label>Columns: <input type="number" id="cols" min="1" value="15"></label>
@@ -114,7 +164,7 @@
     <label><input type="checkbox" id="emptyRows"> Every 2nd row empty</label>
     <label><input type="checkbox" id="edgeSeats"> Allow edge seating</label>
     <div class="lock-control">
-      <span>Lock</span>
+      <span>Lock (distribute places)</span>
       <label class="switch">
         <input type="checkbox" id="lockToggle">
         <span class="slider round"></span>
@@ -122,6 +172,11 @@
     </div>
     <button id="undoBtn">Undo</button>
     <button id="resetBtn">Reset</button>
+  </div>
+  <div class="grid-container"><div id="grid" class="grid"></div></div>
+  <div class="front-indicator">
+    <div class="front-line"></div>
+    <div class="front-text">FRONT</div>
   </div>
   <script>
     const isMobile = 'ontouchstart' in window;
@@ -133,6 +188,8 @@
     const lockToggle = document.getElementById('lockToggle');
     const edgeSeatsInput = document.getElementById('edgeSeats');
     const studentCountEl = document.getElementById('studentCount');
+    const selectionInfoEl = document.getElementById('selectionInfo');
+    const selectionSizeEl = document.getElementById('selectionSize');
     const undoBtn = document.getElementById('undoBtn');
     const resetBtn = document.getElementById('resetBtn');
 
@@ -166,6 +223,32 @@
           gridEl.append(cell);
         }
       }
+      
+      // Update front indicator positioning and width
+      const frontIndicator = document.querySelector('.front-indicator');
+      const frontLine = document.querySelector('.front-line');
+      if (frontIndicator && frontLine && gridContainer) {
+        // Calculate grid width and position
+        const gridWidth = cols * cellSize + (cols - 1); // cell width * count + borders
+        const containerRect = gridContainer.getBoundingClientRect();
+        const containerStyle = getComputedStyle(gridContainer);
+        const containerPadding = parseFloat(containerStyle.paddingLeft) + parseFloat(containerStyle.paddingRight);
+        
+        // Set front line width to match grid width (capped at 400px)
+        frontLine.style.width = Math.min(gridWidth, 400) + 'px';
+        
+        // Position front indicator to align with grid container
+        const bodyRect = document.body.getBoundingClientRect();
+        const containerLeft = containerRect.left - bodyRect.left;
+        const containerWidth = containerRect.width;
+        const gridActualWidth = Math.min(gridWidth + containerPadding, containerWidth);
+        
+        // Center the front indicator relative to the grid container
+        const indicatorLeft = containerLeft + (containerWidth - Math.min(gridWidth, 400)) / 2;
+        frontIndicator.style.position = 'absolute';
+        frontIndicator.style.left = indicatorLeft + 'px';
+      }
+      
       bindEvents(); updateCount(0);
     }
 
@@ -181,6 +264,8 @@
       }
       document.addEventListener(isMobile ? 'touchend' : 'mouseup', () => {
         selecting = false;
+        // Hide selection info when selection ends
+        selectionSizeEl.style.visibility = 'hidden';
         if (isMobile) {
           pendingSelection = false;
           if (touchStartTimeout) {
@@ -389,6 +474,13 @@
       const r2 = +end.dataset.r, c2 = +end.dataset.c;
       const rStart = Math.min(r1, r2), rEnd = Math.max(r1, r2);
       const cStart = Math.min(c1, c2), cEnd = Math.max(c1, c2);
+      
+      // Calculate and show selection dimensions
+      const selectionRows = rEnd - rStart + 1;
+      const selectionCols = cEnd - cStart + 1;
+      selectionSizeEl.textContent = `Selection: ${selectionRows} × ${selectionCols}`;
+      selectionSizeEl.style.visibility = 'visible';
+      
       for (let r = rStart; r <= rEnd; r++) for (let c = cStart; c <= cEnd; c++) available.add(`${r},${c}`);
       render();
     }
@@ -406,8 +498,11 @@
 
     function distribute() {
       let maxRow = 0, maxCount = -1;
-      for (let r = 0; r < rows; r++) {
-        if (emptyRows && r % 2) continue;
+      // Search from bottom to top (highest row index to lowest) to prioritize bottom rows
+      for (let r = rows - 1; r >= 0; r--) {
+        // When emptyRows is enabled, we want every other row empty, but starting from bottom
+        // So we skip rows where (rows - 1 - r) % 2 === 1 to ensure bottom row is available
+        if (emptyRows && (rows - 1 - r) % 2 === 1) continue;
         let cnt = 0;
         for (let c = 0; c < cols; c++) if (available.has(`${r},${c}`) && (allowEdge || (c >= spacing && c < cols - spacing))) cnt++;
         if (cnt > maxCount) { maxCount = cnt; maxRow = r; }
@@ -421,11 +516,11 @@
           if ((c - shift) % (spacing + 1)) continue;
           if (available.has(`${maxRow},${c}`)) cand.push(c);
         }
-        let score = 0; cand.forEach(c => { for (let r = 0; r < rows; r++) if (!(emptyRows && r % 2) && available.has(`${r},${c}`)) score++; });
+        let score = 0; cand.forEach(c => { for (let r = 0; r < rows; r++) if (!(emptyRows && (rows - 1 - r) % 2 === 1) && available.has(`${r},${c}`)) score++; });
         if (score > best.score) best = { score, cols: cand };
       }
-      best.cols.forEach(c => { for (let r = 0; r < rows; r++) if (!(emptyRows && r % 2) && available.has(`${r},${c}`)) gridEl.querySelector(`[data-r='${r}'][data-c='${c}']`).classList.add('student'); });
-      return best.cols.reduce((sum, c) => sum + [...Array(rows).keys()].filter(r => !(emptyRows && r % 2) && available.has(`${r},${c}`)).length, 0);
+      best.cols.forEach(c => { for (let r = 0; r < rows; r++) if (!(emptyRows && (rows - 1 - r) % 2 === 1) && available.has(`${r},${c}`)) gridEl.querySelector(`[data-r='${r}'][data-c='${c}']`).classList.add('student'); });
+      return best.cols.reduce((sum, c) => sum + [...Array(rows).keys()].filter(r => !(emptyRows && (rows - 1 - r) % 2 === 1) && available.has(`${r},${c}`)).length, 0);
     }
 
     function updateCount(n) { studentCountEl.textContent = n; }
@@ -435,6 +530,23 @@
     emptyRowsInput.onchange = () => { emptyRows = emptyRowsInput.checked; locked && render(); };
     edgeSeatsInput.onchange = () => { allowEdge = edgeSeatsInput.checked; locked && render(); };
     lockToggle.onchange = () => { locked = lockToggle.checked; render(); };
+
+    // Recalculate front indicator position on window resize
+    window.addEventListener('resize', () => {
+      const frontIndicator = document.querySelector('.front-indicator');
+      const frontLine = document.querySelector('.front-line');
+      if (frontIndicator && frontLine && gridContainer) {
+        const containerRect = gridContainer.getBoundingClientRect();
+        const bodyRect = document.body.getBoundingClientRect();
+        const containerLeft = containerRect.left - bodyRect.left;
+        const containerWidth = containerRect.width;
+        const cellSize = isMobile ? 24 : 30;
+        const gridWidth = cols * cellSize + (cols - 1);
+        
+        const indicatorLeft = containerLeft + (containerWidth - Math.min(gridWidth, 400)) / 2;
+        frontIndicator.style.left = indicatorLeft + 'px';
+      }
+    });
 
     buildGrid();
   </script>

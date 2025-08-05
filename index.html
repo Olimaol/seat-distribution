@@ -65,6 +65,8 @@
     let isScrolling = false;
     let lastTouchCenter = { x: 0, y: 0 };
     let gridContainer = null;
+    let touchStartTimeout = null;
+    let pendingSelection = false;
     undoBtn.style.display = isMobile ? 'inline-flex' : 'none';
 
     function buildGrid() {
@@ -94,7 +96,16 @@
         gridContainer.addEventListener('touchmove', handleGridTouchMove, { passive: false });
         gridContainer.addEventListener('touchend', handleGridTouchEnd, { passive: false });
       }
-      document.addEventListener(isMobile ? 'touchend' : 'mouseup', () => selecting = false);
+      document.addEventListener(isMobile ? 'touchend' : 'mouseup', () => {
+        selecting = false;
+        if (isMobile) {
+          pendingSelection = false;
+          if (touchStartTimeout) {
+            clearTimeout(touchStartTimeout);
+            touchStartTimeout = null;
+          }
+        }
+      });
       undoBtn.onclick = undo; resetBtn.onclick = reset;
     }
 
@@ -105,13 +116,24 @@
       // Don't prevent default on mobile to allow scrolling
       if (!isMobile) {
         e.preventDefault();
+        selecting = true;
+        const ctrl = e.ctrlKey;
+        startCell = cell;
+        baseAvailable = ctrl ? new Set(available) : new Set();
+        updateSel({ target: cell });
+      } else {
+        // On mobile, delay selection to detect potential two-finger gesture
+        pendingSelection = true;
+        startCell = cell;
+        touchStartTimeout = setTimeout(() => {
+          if (pendingSelection && !isScrolling) {
+            selecting = true;
+            baseAvailable = new Set(available);
+            history.push(new Set(available));
+            updateSel({ target: cell });
+          }
+        }, 100); // 100ms delay to detect second finger
       }
-      selecting = true;
-      const ctrl = !isMobile && e.ctrlKey;
-      startCell = cell;
-      baseAvailable = ctrl ? new Set(available) : (isMobile ? new Set(available) : new Set());
-      if (isMobile) history.push(new Set(available));
-      updateSel({ target: cell });
     }
 
     function handleGridTouchStart(e) {
@@ -120,6 +142,12 @@
         e.preventDefault();
         isScrolling = true;
         selecting = false;
+        pendingSelection = false;
+        // Clear any pending selection timeout
+        if (touchStartTimeout) {
+          clearTimeout(touchStartTimeout);
+          touchStartTimeout = null;
+        }
         const touch1 = e.touches[0];
         const touch2 = e.touches[1];
         lastTouchCenter = {
@@ -166,6 +194,14 @@
     function handleGridTouchEnd(e) {
       if (e.touches.length < 2) {
         isScrolling = false;
+      }
+      // Clean up pending selection state
+      if (e.touches.length === 0) {
+        pendingSelection = false;
+        if (touchStartTimeout) {
+          clearTimeout(touchStartTimeout);
+          touchStartTimeout = null;
+        }
       }
     }
 

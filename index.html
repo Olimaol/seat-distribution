@@ -5,106 +5,29 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>Seat Distribution</title>
   <style>
-    body {
-      font-family: Arial, sans-serif;
-      padding: 1rem;
-      background: #f5f5f5;
-      margin: 0;
-    }
-    .controls {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 1rem;
-      margin-bottom: 1rem;
-    }
-    .controls label {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-      padding: 0.5rem;
-      background: white;
-      border-radius: 8px;
-      flex: 1 1 120px;
-    }
-    .controls input[type="number"],
-    .controls input[type="checkbox"] {
-      width: 100%;
-      max-width: 60px;
-      padding: 0.25rem;
-      font-size: 1rem;
-    }
-    .switch {
-      position: relative;
-      display: inline-block;
-      width: 50px;
-      height: 24px;
-    }
-    .switch input {
-      opacity: 0;
-      width: 0;
-      height: 0;
-    }
-    .slider {
-      position: absolute;
-      cursor: pointer;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background-color: #ccc;
-      transition: .4s;
-      border-radius: 24px;
-    }
-    .slider:before {
-      position: absolute;
-      content: "";
-      height: 18px;
-      width: 18px;
-      left: 3px;
-      bottom: 3px;
-      background-color: white;
-      transition: .4s;
-      border-radius: 50%;
-    }
-    input:checked + .slider {
-      background-color: #4caf50;
-    }
-    input:checked + .slider:before {
-      transform: translateX(26px);
-    }
-    .info {
-      margin-bottom: 1rem;
-      font-weight: bold;
-    }
-    .grid-container {
-      overflow: auto;
-      background: #ddd;
-      padding: 0.5rem;
-      border-radius: 8px;
-    }
-    .grid {
-      display: grid;
-      user-select: none;
-      touch-action: none;
-    }
-    .cell {
-      width: 30px;
-      height: 30px;
-      border: 1px solid #ccc;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      background: white;
-      cursor: pointer;
-      transition: background 0.2s;
-    }
+    body { font-family: Arial, sans-serif; padding: 1rem; background: #f5f5f5; margin: 0; }
+    .controls { display: flex; flex-wrap: wrap; gap: 1rem; margin-bottom: 1rem; }
+    .controls label, .controls button { display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem; background: white; border-radius: 8px; flex: 1 1 120px; }
+    .controls input[type="number"] { width: 100%; max-width: 60px; padding: 0.25rem; font-size: 1rem; }
+    .controls input[type="checkbox"] { transform: scale(1.2); }
+    .controls button { cursor: pointer; border: none; background: #4caf50; color: white; border-radius: 4px; transition: background 0.2s; }
+    .controls button:hover { background: #45a049; }
+    .switch { position: relative; display: inline-block; width: 50px; height: 24px; }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: .4s; border-radius: 24px; }
+    .slider:before { position: absolute; content: ""; height: 18px; width: 18px; left: 3px; bottom: 3px; background-color: white; transition: .4s; border-radius: 50%; }
+    input:checked + .slider { background-color: #4caf50; }
+    input:checked + .slider:before { transform: translateX(26px); }
+    .info { margin-bottom: 1rem; font-weight: bold; }
+    .grid-container { overflow: auto; background: #ddd; padding: 0.5rem; border-radius: 8px; scrollbar-width: thin; scrollbar-color: #888 #ddd; }
+    .grid-container::-webkit-scrollbar { width: 8px; height: 8px; }
+    .grid-container::-webkit-scrollbar-track { background: #ddd; border-radius: 4px; }
+    .grid-container::-webkit-scrollbar-thumb { background: #888; border-radius: 4px; }
+    .grid { display: grid; user-select: none; touch-action: none; }
+    .cell { width: 30px; height: 30px; border: 1px solid #ccc; display: flex; align-items: center; justify-content: center; background: white; cursor: pointer; transition: background 0.2s; }
     .cell.available { background: #cce5ff; }
     .cell.student { background: #8bc34a; }
-    .cell.locked { cursor: default; }
-    @media (max-width: 600px) {
-      .controls { flex-direction: column; }
-      .cell { width: 24px; height: 24px; }
-    }
+    @media (max-width: 600px) { .controls { flex-direction: column; } .cell { width: 24px; height: 24px; } }
   </style>
 </head>
 <body>
@@ -120,6 +43,8 @@
         <span class="slider"></span>
       </label>
     </label>
+    <button id="undoBtn">Undo</button>
+    <button id="resetBtn">Reset</button>
   </div>
   <div class="info">Distributed Students: <span id="studentCount">0</span></div>
   <div class="grid-container">
@@ -127,6 +52,7 @@
   </div>
 
   <script>
+    const isMobile = 'ontouchstart' in window;
     const gridEl = document.getElementById('grid');
     const rowsInput = document.getElementById('rows');
     const colsInput = document.getElementById('cols');
@@ -135,122 +61,119 @@
     const lockToggle = document.getElementById('lockToggle');
     const edgeSeatsInput = document.getElementById('edgeSeats');
     const studentCountEl = document.getElementById('studentCount');
+    const undoBtn = document.getElementById('undoBtn');
+    const resetBtn = document.getElementById('resetBtn');
 
-    let rows = +rowsInput.value;
-    let cols = +colsInput.value;
-    let spacing = +spacingInput.value;
-    let emptyRows = emptyRowsInput.checked;
-    let allowEdge = edgeSeatsInput.checked;
-    let locked = lockToggle.checked;
-    let selecting = false;
-    let startCell = null;
-    let ctrlKey = false;
-    let available = new Set();
-    let baseAvailable = new Set();
+    let rows = +rowsInput.value, cols = +colsInput.value;
+    let spacing = +spacingInput.value, emptyRows = emptyRowsInput.checked;
+    let allowEdge = edgeSeatsInput.checked, locked = lockToggle.checked;
+    let selecting = false, startCell = null;
+    let available = new Set(), baseAvailable = new Set();
+    const history = [];
+
+    // Hide undo on desktop
+    undoBtn.style.display = isMobile ? 'inline-flex' : 'none';
 
     function buildGrid() {
       gridEl.innerHTML = '';
-      gridEl.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
-      gridEl.style.gridTemplateRows = `repeat(${rows}, 1fr)`;
+      gridEl.style.gridTemplateColumns = `repeat(${cols}, auto)`;
+      gridEl.style.gridTemplateRows = `repeat(${rows}, auto)`;
       for (let r = 0; r < rows; r++) {
         for (let c = 0; c < cols; c++) {
           const cell = document.createElement('div');
-          cell.className = 'cell';
-          cell.dataset.r = r;
-          cell.dataset.c = c;
+          cell.className = 'cell'; cell.dataset.r = r; cell.dataset.c = c;
           gridEl.append(cell);
         }
       }
-      bindCellEvents();
-      updateCount(0);
+      bindEvents(); updateCount(0);
     }
 
-    function bindCellEvents() {
+    function bindEvents() {
       gridEl.querySelectorAll('.cell').forEach(cell => {
-        cell.addEventListener('touchstart', e => handlePointerDown(e, cell));
-        cell.addEventListener('mousedown', e => handlePointerDown(e, cell));
-        cell.addEventListener('touchmove', e => handlePointerMove(e));
-        cell.addEventListener('mouseenter', e => selecting && updateSelection(e));
+        cell.addEventListener(isMobile ? 'touchstart' : 'mousedown', e => handleDown(e, cell));
       });
-      document.addEventListener('touchend', () => selecting = false);
-      document.addEventListener('mouseup', () => selecting = false);
+      if (isMobile) gridEl.addEventListener('touchmove', handleMove);
+      else gridEl.querySelectorAll('.cell').forEach(cell => cell.addEventListener('mouseenter', e => selecting && updateSel(e)));
+      document.addEventListener(isMobile ? 'touchend' : 'mouseup', () => selecting = false);
+      undoBtn.onclick = undo; resetBtn.onclick = reset;
     }
 
-    function handlePointerDown(e, cell) {
+    function handleDown(e, cell) {
       if (locked) return;
-      e.preventDefault();
-      ctrlKey = e.ctrlKey || e.touches;
-      selecting = true;
+      e.preventDefault(); selecting = true;
+      // mobile: always keep previous, desktop: reset unless ctrl
+      const ctrl = !isMobile && e.ctrlKey;
       startCell = cell;
-      baseAvailable = ctrlKey ? new Set(available) : new Set();
-      updateSelection(e);
+      baseAvailable = ctrl ? new Set(available) : (isMobile ? new Set(available) : new Set());
+      if (isMobile) history.push(new Set(available));
+      updateSel({ target: cell });
     }
 
-    function handlePointerMove(e) {
-      const touch = e.touches && e.touches[0];
-      const target = touch ? document.elementFromPoint(touch.clientX, touch.clientY) : null;
-      if (selecting && target && target.classList.contains('cell')) updateSelection({ target, ctrlKey });
+    function handleMove(e) {
+      const touch = e.touches[0];
+      const target = document.elementFromPoint(touch.clientX, touch.clientY);
+      if (selecting && target?.classList.contains('cell')) updateSel({ target });
     }
 
-    function updateSelection(e) {
-      if (!startCell) return;
-      const endCell = e.target;
+    function updateSel(e) {
+      const end = e.target;
       available = new Set(baseAvailable);
-      const r1 = +startCell.dataset.r;
-      const c1 = +startCell.dataset.c;
-      const r2 = +endCell.dataset.r;
-      const c2 = +endCell.dataset.c;
-      const [rStart, rEnd] = [Math.min(r1, r2), Math.max(r1, r2)];
-      const [cStart, cEnd] = [Math.min(c1, c2), Math.max(c1, c2)];
-      for (let r = rStart; r <= rEnd; r++) {
-        for (let c = cStart; c <= cEnd; c++) {
-          available.add(`${r},${c}`);
-        }
-      }
+      const r1 = +startCell.dataset.r, c1 = +startCell.dataset.c;
+      const r2 = +end.dataset.r, c2 = +end.dataset.c;
+      const rStart = Math.min(r1, r2), rEnd = Math.max(r1, r2);
+      const cStart = Math.min(c1, c2), cEnd = Math.max(c1, c2);
+      for (let r = rStart; r <= rEnd; r++) for (let c = cStart; c <= cEnd; c++) available.add(`${r},${c}`);
       render();
+    }
+
+    function undo() {
+      if (!isMobile || !history.length) return;
+      available = history.pop(); render();
+    }
+
+    function reset() {
+      history.length = 0; available.clear(); render();
     }
 
     function render() {
       gridEl.querySelectorAll('.cell').forEach(cell => {
-        const key = `${cell.dataset.r},${cell.dataset.c}`;
-        cell.classList.toggle('available', available.has(key));
+        const k = `${cell.dataset.r},${cell.dataset.c}`;
+        cell.classList.toggle('available', available.has(k));
         cell.classList.remove('student');
       });
-      if (locked) {
-        const count = distributeStudents();
-        updateCount(count);
-      } else {
-        updateCount(0);
-      }
+      if (locked) { const cnt = distribute(); updateCount(cnt); }
+      else updateCount(0);
     }
 
-    function distributeStudents() {
+    function distribute() {
       let maxRow = 0, maxCount = -1;
       for (let r = 0; r < rows; r++) {
         if (emptyRows && r % 2 === 1) continue;
-        let count = 0;
+        let cnt = 0;
         for (let c = 0; c < cols; c++) {
-          if (available.has(`${r},${c}`) && (allowEdge || (c >= spacing && c <= cols - 1 - spacing))) count++;
+          if (available.has(`${r},${c}`) && (allowEdge || (c >= spacing && c < cols - spacing))) cnt++;
         }
-        if (count > maxCount) { maxCount = count; maxRow = r; }
+        if (cnt > maxCount) { maxCount = cnt; maxRow = r; }
       }
-      if (maxCount <= 0) return 0;
+      if (maxCount < 1) return 0;
 
       let best = { score: -1, cols: [] };
       for (let shift = 0; shift <= spacing; shift++) {
-        const candidate = [];
+        const cand = [];
         for (let c = 0; c < cols; c++) {
-          if (!allowEdge && (c < spacing || c > cols - 1 - spacing)) continue;
+          if (!allowEdge && (c < spacing || c >= cols - spacing)) continue;
           if ((c - shift) % (spacing + 1) !== 0) continue;
           if (!available.has(`${maxRow},${c}`)) continue;
-          candidate.push(c);
+          cand.push(c);
         }
         let score = 0;
-        candidate.forEach(c => { for (let r = 0; r < rows; r++) {
-          if (emptyRows && r % 2 === 1) continue;
-          if (available.has(`${r},${c}`)) score++;
-        }});
-        if (score > best.score) best = { score, cols: candidate };
+        cand.forEach(c => {
+          for (let r = 0; r < rows; r++) {
+            if (emptyRows && r % 2 === 1) continue;
+            if (available.has(`${r},${c}`)) score++;
+          }
+        });
+        if (score > best.score) best = { score, cols: cand };
       }
 
       best.cols.forEach(c => {
@@ -258,7 +181,8 @@
           if (emptyRows && r % 2 === 1) continue;
           const key = `${r},${c}`;
           if (!available.has(key)) continue;
-          gridEl.querySelector(`.cell[data-r='${r}'][data-c='${c}']`).classList.add('student');
+          const cell = gridEl.querySelector(`.cell[data-r='${r}'][data-c='${c}']`);
+          cell.classList.add('student');
         }
       });
 
@@ -274,10 +198,9 @@
 
     function updateCount(n) { studentCountEl.textContent = n; }
 
-    [rowsInput, colsInput].forEach(inp => inp.onchange = () => {
-      rows = +rowsInput.value; cols = +colsInput.value;
-      available.clear(); baseAvailable.clear(); buildGrid();
-    });
+    function updateCount(n){ studentCountEl.textContent = n; }
+
+    [rowsInput, colsInput].forEach(i => i.onchange = () => { rows = +rowsInput.value; cols = +colsInput.value; available.clear(); history.length = 0; buildGrid(); });
     spacingInput.onchange = () => { spacing = +spacingInput.value; locked && render(); };
     emptyRowsInput.onchange = () => { emptyRows = emptyRowsInput.checked; locked && render(); };
     edgeSeatsInput.onchange = () => { allowEdge = edgeSeatsInput.checked; locked && render(); };
